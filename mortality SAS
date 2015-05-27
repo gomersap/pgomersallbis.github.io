@@ -9,14 +9,17 @@ libname unixwork slibref = work server = ifdnsas1;
 /*Step1 - Set up libnames*/	
 libname nsdata '/secure/mdspublish/released' server = ifdnsas1;	
 libname flows '/secure/ssdt2/project/flows/released' server = ifdnsas1;	
+libname esaana '/secure/STATS_SERVICES/project/esawca/analysis' server = ifdnsas1;	
 	
 rsubmit;	
 libname nsdata '/secure/mdspublish/released';	
 libname flows '/secure/ssdt2/project/flows/released';	
+libname esaana '/secure/STATS_SERVICES/project/esawca/analysis';	
 endrsubmit;	
 	
 rsubmit;	
 %let benefit = ESA;	
+%let esawca = jan_2014;	
 options obs = max;	
 	
 %macro getage (dobdt , samdt , age);	
@@ -61,28 +64,7 @@ if a;
 run;	
 %mend caseload3;	
 	
-%macro caseload4 (yyyymm);	
-data _&yyyymm;	
-set	
-nsdata.esa&yyyymm (keep = ccnino cxbentyp cdstart cdend ccbenlvl carate);	
-run;	
-	
-proc sort data = _&yyyymm;	
-by ccnino;	
-run;	
-	
-data _&yyyymm;	
-merge 	
-_&yyyymm (keep = ccnino cxbentyp cdstart cdend ccbenlvl carate in = a) 	
-nsdata.pers&yyyymm (keep = ccnino ccsex cddob ccgor ccstatgp);	
-	
-by ccnino;	
-if a;	
-	
-run;	
-%mend caseload4;	
-	
-%macro flows1 (yyyymm);	
+%macro flows (yyyymm);	
 data _&yyyymm._parameters;	
 	
 fromdate = mdy(input(substr(put(&yyyymm , 6.),5,2),8.) + 1,1,input(substr(put(&yyyymm , 6.),1,4),8.) - 1);	
@@ -230,182 +212,18 @@ run;
 proc sort data = _&yyyymm (where = (wagb_flag = 1)) out = _&yyyymm._ind (drop = wagb_flag) nodupkey;	
 by ccnino;	
 run;	
-%mend flows1;	
-	
-%macro flows2 (yyyymm);	
-data _&yyyymm._parameters;	
-	
-fromdate = mdy(input(substr(put(&yyyymm , 6.),5,2),8.) + 1,1,input(substr(put(&yyyymm , 6.),1,4),8.) - 1);	
-todate = mdy(input(substr(put(&yyyymm , 6.),5,2),8.) + 1,1,input(substr(put(&yyyymm , 6.),1,4),8.)) - 1;	
-	
-q3 = year(intnx('month' , todate , -3))*100 + month(intnx('month' , todate , -3));	
-q2 = year(intnx('month' , todate , -6))*100 + month(intnx('month' , todate , -6));	
-q1 = year(intnx('month' , todate , -9))*100 + month(intnx('month' , todate , -9));	
-	
-call symputx ('fromdate' , fromdate);	
-call symputx ('todate' , todate);	
-call symputx ('q3' , q3);	
-call symputx ('q2' , q2);	
-call symputx ('q1' , q1);	
-	
-format fromdate todate date9.;	
-	
-run;	
-	
-data _&yyyymm is_ib_sda_&yyyymm;	
-set	
-_&yyyymm (in = a) 	
-	
-flows.offs&yyyymm (keep = ccnino cxbentyp cdstart cdend cddod ccsex cddob ccgor ccstatgp benefit_level_ind carate 	
- rename = (benefit_level_ind = ccbenlvl) 	
-  where = (cxbentyp in ('ESA')) in = b)	
-	
-flows.offs&q3 (keep = ccnino cxbentyp cdstart cdend cddod ccsex cddob ccgor ccstatgp benefit_level_ind carate 	
- rename = (benefit_level_ind = ccbenlvl) 	
-  where = (cxbentyp in ('ESA')) in = c)	
-	
-flows.offs&q2 (keep = ccnino cxbentyp cdstart cdend cddod ccsex cddob ccgor ccstatgp benefit_level_ind carate 	
- rename = (benefit_level_ind = ccbenlvl) 	
-  where = (cxbentyp in ('ESA')) in = d)	
-	
-flows.offs&q1 (keep = ccnino cxbentyp cdstart cdend cddod ccsex cddob ccgor ccstatgp benefit_level_ind carate 	
- rename = (benefit_level_ind = ccbenlvl) 	
-  where = (cxbentyp in ('ESA')) in = e);	
-	
-if a then type = 1; else type = 2;	
-	
-if cxbentyp = 'JSA' then ccstatgp = 1;	
- else if cxbentyp in ('ESA' , 'IBSDA') then ccstatgp = 2;	
-  else if cxbentyp = 'IS' and ccstatgp not in (2 3 4 5) then ccstatgp = 5;	
-	
-if cdstart = . then cdstart = &fromdate;	
-if cdend = . then cdend = '31dec9999'd;	
-if cddod = . then cddod = '31dec9999'd;	
-	
-if cddob ne . then do;	
-if cdstart < &fromdate then do;	
-%getage (cddob , &fromdate , cnage);	
-end;	
-	
-else do;	
-%getage (cddob , cdstart , cnage);	
-end;	
-	
-end;	
-	
-else do;	
-cnage = 9999999;	
-end;	
-	
-if &fromdate <= cddod <= &todate and cddod > cdstart then do;	
- cddod_fg = 1;	
-  dod_dur = cddod - cdend;	
-   dod_mth = month(cddod);	
-   end;	
-	
-else do;	
- cddod_fg = 0;	
-  dod_dur = 9999999;	
-   dod_mth = 9999999;	
-  end;	
-	
-if cdstart < cdend and (ccsex = 'F' and 15 <= cnage < 60 or ccsex = 'M' and 15 <= cnage < 65) and ccgor in ("A","B","D","E","F","G","H","J","K","W","X") then wagb_flag = 1;	
- else wagb_flag = 0;	
-	
-monyyyy = mdy(input(substr(put(&yyyymm , 6.),5,2),8.),1,input(substr(put(&yyyymm , 6.),1,4),8.));	
-	
-if cxbentyp in ('ESA' , 'JSA') then do;	
-if cdend = '31dec9999'd then clm_dur = &todate - cdstart;	
- else clm_dur = cdend - cdstart;	
-  output _&yyyymm;	
-   end;	
-	
-    else do;	
-     output is_ib_sda_&yyyymm;	
-	  end;
-	
-	  if ccbenlvl = . then ccbenlvl = 0;
-	
-format monyyyy monyy7.;	
-	
-label 	
-	
-type = 'Type of record' 	
-cnage = 'Age'	
-cddod_fg = 'Date of death flag' 	
-dod_dur = 'Duration from claim end to date of death'	
-dod_mth = 'Month of death'	
-wagb_flag = 'Working Age\Great Britain flag'	
-monyyyy = 'Year to:'	
-clm_dur = 'Duration of current claim';;	
-	
-drop cxbentyp cddob;	
-	
-run;	
-	
-proc sort data = is_ib_sda_&yyyymm;	
-by ccnino cdstart;	
-run;	
-	
-data is_ib_sda_&yyyymm;	
-set is_ib_sda_&yyyymm;	
-by ccnino;	
-retain cdstart_prev cdend_prev;	
-	
-if first.ccnino then do;	
-	
- if cdend = '31dec9999'd then clm_dur = &todate - cdstart;	
- else clm_dur = cdend - cdstart;	
-	
-cdstart_prev = cdstart;	
- cdend_prev = cdend;	
-	
-  end;	
-	
-else do;	
- if cdstart <= cdend_prev then do;	
-  if cdend = '31dec9999'd then clm_dur = &todate - cdstart_prev;	
-  else clm_dur = cdend - cdstart_prev;	
-   end;	
-	
-    else do;	
-     if cdend = '31dec9999'd then clm_dur = &todate - cdstart;	
-      else clm_dur = cdend - cdstart;	
-       end;	
-	
-        cdstart_prev = cdstart;	
-         cdend_prev = cdend;	
-	
-          end;	
-	
-format cdstart_prev cdend_prev date9.;	
-	
-drop cdstart_prev cdend_prev;	
-	
-run;	
-	
-proc append base = _&yyyymm data = is_ib_sda_&yyyymm;	
-run;	
-	
-proc sort data = _&yyyymm;	
-by ccnino descending cdend descending cdstart ccstatgp;	
-run;	
-	
-proc sort data = _&yyyymm (where = (wagb_flag = 1)) out = _&yyyymm._ind (drop = wagb_flag) nodupkey;	
-by ccnino;	
-run;	
-%mend flows2;	
+%mend flows;	
 	
 %caseload3 (200902);	
-%flows1 (200902);	
+%flows (200902);	
 %caseload3 (201002);	
-%flows1 (201002);	
+%flows (201002);	
 %caseload3 (201102);	
-%flows1 (201102);	
+%flows (201102);	
 %caseload3 (201202);	
-%flows1 (201202);	
-%caseload4 (201302);	
-%flows2 (201302);	
+%flows (201202);	
+%caseload3 (201302);	
+%flows (201302);	
 	
 data &benefit._ind;	
 set 	
@@ -414,6 +232,40 @@ _201002_ind
 _201102_ind	
 _201202_ind	
 _201302_ind;	
+run;	
+	
+data &benefit._parameters;	
+esawcadate = (intnx('month' , input(("01" || substr("&esawca",1,3) || substr("&esawca",5,4)),date9.), -7));	
+call symputx ('esawcadate' , esawcadate);	
+format esawcadate date9.;	
+run;	
+	
+proc sql;	
+	
+create table &benefit._ind_wca as select a.* , 	
+	
+case when b.jcp_atos_result_date ne . then b.jcp_atos_result_date else '31dec9999'd end as jcp_atos_result_date format date9. , 	
+case when b.initial_or_repeat ne 'Repeat' then 1 else 2 end as initial_or_repeat , 	
+case when input(substr(b.jcp_atos_result_pub , 1 ,1) , 8.) in (1 2 3) or	
+                     input(substr(b.jcp_atos_result_pub , 1 ,1) , 8.) = 4 and a.cdend ne '31dec9999'd or	
+                      input(substr(b.jcp_atos_result_pub , 1 ,1) , 8.) = 5 and a.cdend = '31dec9999'd then input(substr(b.jcp_atos_result_pub , 1 ,1) , 8.)	
+                       when (b.jcp_atos_result_pub = "" or input(substr(b.jcp_atos_result_pub , 1 ,1) , 8.) = 5) and a.cdend ne '31dec9999'd then 4	
+                         else 5 end as jcp_atos_result_pub length = 3 , 	
+case when b.jcp_atos_result_date ne . and a.cdend ne '31dec9999'd then a.cdend - b.jcp_atos_result_date else 9999999 end as wca_dur ,	
+case when b.jcp_atos_result_date ne . and a.cddod ne . then a.cddod - b.jcp_atos_result_date else 9999999 end as dod_wca_dur	
+	
+from &benefit._ind as a left join esaana.&esawca._pub_full_version (keep = allnino ben jcp_atos_result_date cdstart initial_or_repeat jcp_atos_result_pub	
+	
+where = (ben = 'ESA' and jcp_atos_result_pub ne '6. Clerical' and '27oct2008'd <= cdstart <= &esawcadate)) as b on	
+	
+(a.ccnino = b.allnino) and (a.cdstart <= b.jcp_atos_result_date <= a.cdend)	
+	
+order by ccnino , monyyyy , wca_dur descending;	
+	
+quit;	
+	
+proc sort data = &benefit._ind_wca nodupkey;	
+by ccnino monyyyy;	
 run;	
 endrsubmit;	
 	
@@ -492,10 +344,22 @@ value dod_mth
 11 = 'November'	
 12 = 'December';	
 	
+value dod_wca_dur	
+low - < 0 = 'No death recorded, unknown duration or no assessment undertaken'	
+0-90 = 'Up to 3 months'	
+91-182 = '3 months up to 6 months'	
+183-365 = '6 months up to 1 year'	
+366-730 = '1 year and up to 2 years'	
+731-1826 = '2 years and up to 5 years'	
+1827-9999998 = '5 years and over'	
+9999999 = 'No death recorded, unknown duration or no assessment undertaken'; 	
+	
 value ccbenlvl	
-1 = 'Assessment phase'	
-2 = 'Support Group'	
-3 = 'Work Related Activity Group'	
+1 = 'Support group'	
+2 = 'Work Related Activity Group'	
+3 = 'Fit for Work' 	
+4 = 'Claim closed before assessment complete'	
+5 = 'Assessment still in progress'	
 other = 'Unknown'; 	
 run;	
 	
@@ -656,15 +520,15 @@ keylabel n = ' ' sum = ' ';
 format dod_mth dod_mth. ccsex $ccsex. cnage cnage. cddod_fg cddod_fg.;	
 run; 	
 	
-proc tabulate data = &benefit._ind noseps missing formchar=':            ' f=12.2;	
+proc tabulate data = &benefit._ind_wca noseps missing formchar=':            ' f=12.2;	
 title "&benefit population by gender, age, year and whether the claimant has died within the last 12 months";	
 var carate;	
-class ccsex ccbenlvl cnage monyyyy cddod_fg;	
-table (all='Total' ccbenlvl = ' '*ccsex = ' '*(all = 'Total' cnage = ' ')) , 	
+class ccsex jcp_atos_result_pub cnage monyyyy cddod_fg;	
+table (all='Total' jcp_atos_result_pub = ' '*ccsex = ' '*(all = 'Total' cnage = ' ')) , 	
 ((monyyyy = 'Year to:' all = 'Total')*(all = 'Total' cddod_fg = 'Has the claimant died within the last 12 months?'))*(carate=' ') / 	
 box = 'Gender/Age' printmiss misstext = '0';	
 keylabel n = ' ' sum = ' ';	
-format ccsex $ccsex. ccbenlvl ccbenlvl. cnage cnage. cddod_fg cddod_fg.;	
+format ccsex $ccsex. jcp_atos_result_pub ccbenlvl. cnage cnage. cddod_fg cddod_fg.;	
 run; 	
 	
 ods html close;	
@@ -674,9 +538,9 @@ ods html close;
 ods listing;	
 	
 proc download infile ="~/MRWA_&benefit..xls"	
-outfile = "\\dfz72739\Folders\CLIENT_STATISTICS\Live_Running\Adhocs\PUBLICATIONS\2013\Mortality rates of working age  benefit claimants\SAS Output and Workings\MRWA_&benefit..xls";	
+outfile = "\\dfz72739\Folders\CLIENT_STATISTICS\Live_Running\Adhocs\PUBLICATIONS\2013\Mortality rates of working age DWP benefit claimants\SAS Output\MRWA_&benefit..xls";	
 run;	
 	
 x 'cd ~';	
 x "rm MRWA_&benefit..xls";	
-endrsubmit;	
+endrsubmit;
